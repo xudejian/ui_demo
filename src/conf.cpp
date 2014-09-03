@@ -59,18 +59,19 @@ void init_conf(Conf_t *conf) {
 	conf->magic_server_num = 0;
 }
 
-int assign_conf_item(Conf_t *conf, char *key, int key_len, char *value)
+void assign_conf_item(void *data, char *key, int key_len, char *value)
 {
+	Conf_t *conf = (Conf_t*)data;
 #define CONF_INT(name, item)                 \
 	if (!strncasecmp(key, name, key_len)) {  \
 		conf->item = atoi(value);            \
-		return 0;                            \
+		return;                              \
 	}
 
 #define CONF_STR(name, item)                                   \
 	if (!strncasecmp(key, name, key_len)) {                    \
 		snprintf(conf->item, sizeof(conf->item), "%s", value); \
-		return 0;                                              \
+		return;                                                \
 	}
 
 	CONF_INT("Listen_port", listen_port);
@@ -116,20 +117,34 @@ int assign_conf_item(Conf_t *conf, char *key, int key_len, char *value)
 	CONF_INT("Magic_ui_num", magic_ui_num);
 	CONF_INT("Magic_server_num", magic_server_num);
 	CONF_INT("Serv_type", serv_type);
-	return -1;
 #undef CONF_INT
 #undef CONF_STR
 }
 
-int parse_config_line(Conf_t *conf, char *line) {
-	char *key, *value, *p;
-	int key_len;
+int load_conf(Conf_t *conf, const char *conf_filename)
+{
+	if (NULL == conf || NULL == conf_filename) {
+		return -1;
+	}
 
-	p = key = line;
+	init_conf(conf);
+	return async_load_conf(conf_filename, conf, assign_conf_item);
+}
+
+static int parse_config_line(char *line, char **key, int *key_len, char **value)
+{
+	char *p;
+
+	p = line;
+	while (*p && *p == ' ') {
+		p++;
+	}
+
+	*key = p;
 	while (*p && *p != ' ') {
 		p++;
 	}
-	key_len = p - key;
+	*key_len = p - *key;
 
 	while (*p && *p == ' ') {
 		p++;
@@ -142,26 +157,28 @@ int parse_config_line(Conf_t *conf, char *line) {
 	while (*p && *p == ' ') {
 		p++;
 	}
-	value = p;
+	*value = p;
 
-	return assign_conf_item(conf, key, key_len, value);
+	return 0;
 }
 
-int load_conf(Conf_t *conf, const char *conf_filename)
+int async_load_conf(const char *filename, void *data, conf_assign_cb fn)
 {
-	if (NULL == conf || NULL == conf_filename) {
-		return -1;
-	}
-
-	init_conf(conf);
-	FILE *fp = fopen(conf_filename, "r");
+	FILE *fp = fopen(filename, "r");
 	if (fp == NULL) {
 		return -1;
 	}
 
 	char buf[1024];
+	char *key, *value;
+	int key_len, rv;
 	while (fgets(buf, sizeof(buf), fp)) {
-		parse_config_line(conf, trim(buf));
+		buf[sizeof(buf) - 1] = '\0';
+		rv = parse_config_line(buf, &key, &key_len, &value);
+		if (rv) {
+			continue;
+		}
+		(*fn)(data, key, key_len, value);
 	}
 
 	fclose(fp);

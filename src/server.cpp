@@ -183,40 +183,112 @@ int server_get_sock(int *group_id, int *server_id, Group_sock_t *pgs)
 }
 */
 
-/*
+static void server_conf_init()
+{
+	g_sg_num = 0;
+	memset(&g_rate, 0, sizeof(Group_rate_t));
+	memset(&g_sgroup, 0, sizeof(Server_group_t));
+	memset(g_rg, 0, sizeof(g_rg));
+}
+
+#define CONF_INT(name, item)                 \
+	if (!strncasecmp(key, name, key_len)) {  \
+		item = atoi(value);					 \
+		return;                              \
+	}
+
+#define CONF_STR(name, item)                                   \
+	if (!strncasecmp(key, name, key_len)) {                    \
+		memcpy(item, value, sizeof(item) - 1);                 \
+		item[sizeof(item) - 1] = '\0';                         \
+		return;                                                \
+	}
+
+static void server_assign_conf_item(void *data, char *key, int key_len, char *value)
+{
+	CONF_INT("Server_group_num", g_sg_num);
+	if (is_start_with_end_with_s(key, key_len, "Group_", "_rate")) {
+		int idx = atoi(key+6) - 1;
+		if (idx >= g_sg_num || idx < 0)
+		{
+			WARNING_LOG("the idx [%d] is out of range", idx);
+			return;
+		}
+
+		g_sgroup[idx].rate = atoi(value);
+	}
+}
+
+static void server_group_assign_conf_item(void *data, char *key, int key_len, char *value)
+{
+	if (NULL == data) {
+		return;
+	}
+
+	Server_group_t *conf = (Server_group_t *)data;
+	CONF_INT("Server_num", conf->srv_num);
+	if (conf->srv_num < 1) {
+		return;
+	}
+
+	if (is_start_with_s(key, "Srv_")) {
+		int idx = atoi(key+4);
+		if (idx >= conf->srv_num || idx < 0)
+		{
+			WARNING_LOG("the idx [%d] is out of range", idx);
+			return;
+		}
+
+		if (is_end_with_s(key, key_len, "_host")) {
+			msetstr(conf->servers[idx].host, value);
+		}
+		else if (is_end_with_s(key, key_len, "_port")) {
+			conf->servers[idx].port = atoi(value);
+		}
+	}
+}
+
+static void server_referer_group_assign_conf_item(void *data, char *key, int key_len, char *value)
+{
+	if (is_start_with_s(key, "Ref_")) {
+		int r_id = atoi(key+4);
+		if (r_id >= MAX_REFERER_ID || r_id < 0)
+		{
+			WARNING_LOG("the referer id [%d] is out of range", r_id);
+			return;
+		}
+
+		if (is_end_with_s(key, key_len, "_name")) {
+			msetstr(g_rg[r_id].referer_name, value);
+		}
+		else if (is_end_with_s(key, key_len, "_group")) {
+			g_rg[r_id].group_id = atoi(value);
+		}
+	}
+}
+#undef CONF_INT
+#undef CONF_STR
+
 int server_conf_load(char *confpath)
 {
-	// load server.conf
-	Tyconf_t sconf;
+	int rv;
+	char filename[1024];
 
-	memset(&sconf, 0, sizeof(Tyconf_t));
-	if (ty_readconf(confpath, "server.conf", &sconf) < 0)
-	{
-		FATAL_LOG("read conf [%s/server.conf] failed!", confpath);
+	server_conf_init();
+
+	snprintf(filename, sizeof(filename)-1, "%s/server.conf", confpath);
+	rv = async_load_conf(filename, NULL, server_assign_conf_item);
+	if (rv < 0) {
+		WARNING_LOG("read conf[%s] failed!", filename);
 		return -1;
 	}
-
-	if (!ty_getconfint(&sconf, "Server_group_num", &g_sg_num))
-	{
-		FATAL_LOG("can not get Server_group_num");
-		return -1;
-	}
-
 	if (g_sg_num > MAX_GROUP_NUM)
 		g_sg_num = MAX_GROUP_NUM;
 
-	memset(&g_rate, 0, sizeof(Group_rate_t));
+
 	int rate = 0;
-	char name[WORD_SIZE];
 	for (int i = 0; i < g_sg_num; i++)
 	{
-		snprintf(name, sizeof(name), "Group_%d_rate", i+1);
-		if (!ty_getconfint(&sconf, name, &g_sgroup[i].rate))
-		{
-			WARNING_LOG("load [%s] failed", name);
-			g_sgroup[i].rate = DEFAULT_GROUP_RATE;
-		}
-
 		if (g_sgroup[i].rate > 0)
 		{
 			g_rate.rate[g_rate.rate_num] = rate + g_sgroup[i].rate;
@@ -233,92 +305,30 @@ int server_conf_load(char *confpath)
 	}
 
 	// load group_num.conf
-	char filename[16];
 	for (int i = 0; i < g_sg_num; i++)
 	{
-		memset(&sconf, 0, sizeof(Tyconf_t));
-		snprintf(filename, sizeof(filename), "group_%d.conf", i+1);
-		if (ty_readconf(confpath, filename, &sconf) < 0)
-		{
-			WARNING_LOG("read conf[%s/%s] failed!", confpath, filename);
-			g_sgroup[i].srv_num = 0;
-			continue;
-		}
-
-		if (!ty_getconfint(&sconf, "Server_num", &g_sgroup[i].srv_num))
-		{
-			WARNING_LOG("load Server_num failed!");
+		snprintf(filename, sizeof(filename)-1, "%s/group_%d.conf", confpath, i+1);
+		rv = async_load_conf(filename, (void*)&g_sgroup[i], server_group_assign_conf_item);
+		if (rv < 0) {
+			WARNING_LOG("read conf[%s] failed!", filename);
 			g_sgroup[i].srv_num = 0;
 			continue;
 		}
 
 		if (g_sgroup[i].srv_num > GROUP_MAX_SERVER_NUM)
 			g_sgroup[i].srv_num = GROUP_MAX_SERVER_NUM;
-
-		for (int j = 0; j < g_sgroup[i].srv_num; j++)
-		{
-			snprintf(name, sizeof(name), "Srv_%d_host", j+1);
-			if (!ty_getconfstr(&sconf, name, g_sgroup[i].servers[j].host))
-			{
-				WARNING_LOG("load [%s] failed", name);
-				g_sgroup[i].servers[j].host[0] = '\0';
-			}
-
-			snprintf(name, sizeof(name), "Srv_%d_port", j+1);
-			if (!ty_getconfint(&sconf, name, &g_sgroup[i].servers[j].port))
-			{
-				WARNING_LOG("load [%s] failed", name);
-				g_sgroup[i].servers[j].port = 0;
-			}
-		}
 	}
 
 	// load referer_group.conf
-	int rg_num = 0;
-	memset(g_rg, 0, sizeof(g_rg));
-	memset(&sconf, 0, sizeof(Tyconf_t));
-	if (ty_readconf(confpath, "referer_group.conf", &sconf) < 0)
-	{
-		WARNING_LOG("read conf[%s/referer_group.conf] failed!", confpath);
+	snprintf(filename, sizeof(filename)-1, "%s/referer_group.conf", confpath);
+	rv = async_load_conf(filename, NULL, server_referer_group_assign_conf_item);
+	if (rv < 0) {
+		WARNING_LOG("read conf[%s] failed!", filename);
 		return 0;
-	}
-	if (!ty_getconfint(&sconf, "Referer_num", &rg_num))
-	{
-		WARNING_LOG("load Referer_Num failed");
-		return 0;
-	}
-
-	int r_id = 0;
-	for (int i = 0; i < rg_num; i++)
-	{
-		snprintf(name, sizeof(name), "Ref_%d_id", i+1);
-		if (!ty_getconfint(&sconf, name, &r_id))
-		{
-			WARNING_LOG("load [%s] failed", name);
-		}
-		if (r_id < MAX_REFERER_ID)
-		{
-			snprintf(name, sizeof(name), "Ref_%d_name", i+1);
-			if (!ty_getconfstr(&sconf, name, g_rg[r_id].referer_name))
-			{
-				WARNING_LOG("load [%s] failed", name);
-			}
-
-			snprintf(name, sizeof(name), "Ref_%d_group", i+1);
-			if (!ty_getconfint(&sconf, name, &g_rg[r_id].group_id))
-			{
-				WARNING_LOG("load [%s] failed", name);
-			}
-		}
-		else
-		{
-			WARNING_LOG("the referer id [%d] is too big", r_id);
-		}
 	}
 
 	return 0;
 }
-*/
 
 conn_ctx_t *alloc_conn_context() {
   conn_ctx_t *ctx = (conn_ctx_t *) malloc(sizeof(conn_ctx_t));

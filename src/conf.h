@@ -58,4 +58,8 @@ typedef struct {
 
 int load_conf(Conf_t *conf, const char *conf_filename);
 
+typedef void (*conf_assign_cb)(void *data, char *key, int key_len, char *value);
+
+int async_load_conf(const char *filename, void *data, conf_assign_cb fn);
+
 #endif

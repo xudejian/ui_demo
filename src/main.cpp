@@ -46,6 +46,11 @@ int init()
 		return -1;
 	}
 
+	snprintf(temp_path, sizeof(temp_path), "%s/conf", g_sys_path);
+	if (server_conf_load(temp_path) < 0) {
+		return -1;
+	}
+
 	if (template_init() < 0) {
 		FATAL_LOG("call template_init() failed!");
 		return -1;

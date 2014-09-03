@@ -304,70 +304,9 @@ static int readlines_2_array(char *full_path, char *array, int max_item_len, int
 	return num;
 }
 
-int template_load_uivar(char *full_path)
-{
-}
-
 int template_load_conf(char *full_path)
 {
 	return readlines_2_array(full_path, g_pTemplate->tn[0], MAX_TEMPLATE_NAME_LEN, MAX_TEMPLATE_NUM);
-}
-
-typedef void (*conf_assign_cb)(void *data, char *key, int key_len, char *value);
-
-static int __parse_config_line(char *line, char **key, int *key_len, char **value)
-{
-	char *p;
-
-	p = line;
-	while (*p && *p == ' ') {
-		p++;
-	}
-
-	*key = p;
-	while (*p && *p != ' ') {
-		p++;
-	}
-	*key_len = p - *key;
-
-	while (*p && *p == ' ') {
-		p++;
-	}
-	if (*p != ':') {
-		return -1;
-	}
-	p++;
-
-	while (*p && *p == ' ') {
-		p++;
-	}
-	*value = p;
-
-	return 0;
-}
-
-static int _load_conf(const char *filename, void *data, conf_assign_cb fn)
-{
-	FILE *fp = fopen(filename, "r");
-	if (fp == NULL) {
-		return -1;
-	}
-
-	char buf[1024];
-	char *key, *value;
-	int key_len, rv;
-	while (fgets(buf, sizeof(buf), fp)) {
-		buf[sizeof(buf) - 1] = '\0';
-		rv = __parse_config_line(buf, &key, &key_len, &value);
-		if (rv) {
-			continue;
-		}
-		(*fn)(data, key, key_len, value);
-	}
-
-	fclose(fp);
-	fp = NULL;
-	return 0;
 }
 
 static void temp_conf_init(Template_t *ptpl)
@@ -432,7 +371,7 @@ int temp_load_config_file(const char *path, const char *filename, Template_t *pt
 	char name[1024];
 
 	snprintf(name, sizeof(name)-1, "%s/%s", path, filename);
-	rv = _load_conf(name, ptpl, temp_assign_conf_item);
+	rv = async_load_conf(name, ptpl, temp_assign_conf_item);
 	if (rv < 0) {
 		DEBUG_LOG("read conf [%s/%s] failed!", path, filename);
 	}
