@@ -120,7 +120,6 @@ typedef struct {
 	int server_id;
 	int fetch_timeused;
 	int digest_server_timeused;
-	int re_timeused;
 	int server_timeused;
 	int server_status;
 	u_int need_merge;

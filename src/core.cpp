@@ -19,7 +19,8 @@ int server_init() {
 }
 
 void server_ctx_clean(conn_ctx_t *ctx) {
-  if (ctx->data) {
+  if (ctx && ctx->data) {
+	  DEBUG_LOG("pre clean server ctx");
     redisFree((redisContext *)(ctx->data));
     ctx->data = NULL;
   }
@@ -42,18 +43,24 @@ void empty_response_buf(uv_buf_t *buf) {
   buf->base[0] = '\0';
   buf->len = 0;
 }
-/*
-static int set_to_upstream_request(web_request_t *papache_request, upstream_request_t *preq)
+
+static int set_to_upstream_request(web_request_t *web, upstream_request_t *up)
 {
-	assert(papache_request != NULL);
-	assert(preq != NULL);
-	if (papache_request == NULL || preq == NULL)
+	assert(web != NULL);
+	assert(up != NULL);
+	if (web == NULL || up == NULL)
 	{
 		WARNING_LOG("web_request_t or upstream_request_t NULL");
 		return -1;
 	}
+	memcpy(up->query, web->query, sizeof(up->query));
+	up->magic = web->magic;
+	up->need_merge = web->need_merge;
+	up->need_pb = web->need_pb;
 	return 0;
 }
+
+/*
 
 void *service_thread(void *pti)
 {
@@ -61,7 +68,6 @@ void *service_thread(void *pti)
 	int s_index = 0;
 	int ret = 0;
 	TySock_head_t shead;
-	int re_sock = -1;
 
 	u_int max_read_size = 1024*1024;
 	u_int max_send_size = 1024*1024;
@@ -290,31 +296,6 @@ merge_result:
 			}
 		}
 
-		GetTimeCurrent(tv1);
-		if (g_conf.enable_re) {
-			snprintf(re_req.query, sizeof(re_req.query), "%s", upstream_request.query);
-			for (int re_retry=0; re_retry<2; re_retry++) {
-				ret = re_server_search(re_sock, &re_req, &re_res);
-				if (ret != 0) {
-					if (re_sock > -1) {
-						close(re_sock);
-						re_sock = -1;
-						re_sock = re_server_connect_all();
-						continue;
-					}
-				}
-				break;
-			}
-		}
-		GetTimeCurrent(tv2);
-		SetTimeUsed(loginfo.re_timeused, tv1, tv2);
-		if (loginfo.re_timeused > 1) {
-			loginfo.server_timeused -= loginfo.re_timeused;
-			if (loginfo.server_timeused < 1) {
-				loginfo.server_timeused = 1;
-			}
-		}
-
 		if (shead.need_pb == 1) {
 			loginfo.need_pb = 1;
 			if (shead.need_merge == 0) {
@@ -391,15 +372,9 @@ int worker_handler(conn_ctx_t *ctx) {
   char *buf = ctx->response_buf.base;
   int len = 0;
 
-  len += snprintf(buf+len, RESPONSE_BUF_SIZE-len, "{"EOL);
+  memcpy(buf, &ctx->upstream_response, ctx->upstream_response_len);
+  len = ctx->upstream_response_len;
 
-  len += snprintf(buf+len, RESPONSE_BUF_SIZE-len, "slot_id:%s"EOL, ctx->request.web.query);
-  DEBUG_LOG("req %s", ctx->request.web.query);
-
-  len += snprintf(buf+len, RESPONSE_BUF_SIZE-len, ",set:["EOL);
-  len += snprintf(buf+len, RESPONSE_BUF_SIZE-len, "]"EOL);
-
-  len += snprintf(buf+len, RESPONSE_BUF_SIZE-len, "}"EOL);
   ctx->response_buf.len = len;
   return 1;
 }

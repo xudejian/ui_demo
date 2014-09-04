@@ -154,10 +154,7 @@ static int parse_config_line(char *line, char **key, int *key_len, char **value)
 	}
 	p++;
 
-	while (*p && *p == ' ') {
-		p++;
-	}
-	*value = p;
+	*value = trim(p);
 
 	return 0;
 }

@@ -26,17 +26,37 @@ typedef struct tag_Server_group_t
 	int rate;                               // 分流比例
 }Server_group_t;
 
+typedef enum {
+	upstream_connect_init = 0,
+	upstream_connecting,
+	upstream_idle,
+	upstream_close,
+	upstream_connect_fail
+} upstream_connect_status_t;
+
+typedef struct {
+	uv_connect_t connect;
+	uv_tcp_t tcp;
+	uv_write_t write;
+	uv_timer_t timer;
+	int status;
+	int group_idx;
+	u_int deadtime;     // 上次连接失败时间
+} upstream_connect_t;
+
 typedef struct tag_Group_server_sock_t
 {
-	int sock[GROUP_MAX_SERVER_NUM];
-	u_int deadtime[GROUP_MAX_SERVER_NUM];     // 上次连接失败时间
+	upstream_connect_t upstream[GROUP_MAX_SERVER_NUM];
 	int real_num;
 	int sock_num;
+	int connecting;
+	int lru;
 }Group_server_sock_t;
 
 typedef struct tag_Group_sock_t
 {
 	Group_server_sock_t group[MAX_GROUP_NUM];
+	int distribute_count;
 }Group_sock_t;
 
 typedef struct tag_Group_rate_t
@@ -77,12 +97,15 @@ typedef struct {
 	//char  pid_str[MAX_PID_STR_LEN];     //pid= 版块id
 	//char  other_str[MAX_OTHER_STR_LEN]; //pids= 版块ids
 	//char  time_str[MAX_TIM_STR_LEN];	//time=快速时间
+	char need_merge;
+	char need_pb;
 } web_request_t;
 
 #define REQUEST_BUF_SIZE sizeof(web_request_t)
 #define RESPONSE_BUF_SIZE 65535
 
 typedef struct {
+	int magic;
 	char  query[MAX_QUERY_WORD_LEN];	//检索关键词
 	u_short screen_length;			    //用户页面像素宽度
 	u_short screen_height;			    //用户页面像素高度
@@ -99,11 +122,13 @@ typedef struct {
 	char  tn[MAX_TEMPLATE_NAME_LEN];    //应用模板名称
 	char  pid_str[MAX_PID_STR_LEN];     //版块id
 	char  other_str[MAX_OTHER_STR_LEN];   //预留
+	char need_merge;
+	char need_pb;
 } upstream_request_t;
 
 typedef struct {
 	u_int status;
-	u_int return_num;						//返回结果条数
+	u_int return_num;					//返回结果条数
 	u_int res_num;						//返回结果条数
 	u_int total_num;					//搜索到结果总数
 } upstream_response_head_t;
@@ -113,22 +138,30 @@ typedef struct {
   uv_write_t write;
   uv_stream_t client;
 
+  uv_buf_t response_buf;
+  char *start;
+  char *end;
+
+  int status;
+  void *data;
+  Group_sock_t gs;
+
+  int upstream_response_len;
+  upstream_response_head_t head;
+  struct {
+	  upstream_response_head_t head;
+	  char buf[RESPONSE_BUF_SIZE];
+  } upstream_response;
+
   int request_len;
   struct {
     web_request_t web;
 	upstream_request_t up;
   } request;
 
-  struct {
-	  upstream_response_head_t head;
-  } response;
   union {
     char buf[RESPONSE_BUF_SIZE];
   } _response;
-  uv_buf_t response_buf;
-
-  int status;
-  void *data;
 } conn_ctx_t;
 
 extern uv_tcp_t * server_listen(const char *ip, int port, uv_loop_t *loop);

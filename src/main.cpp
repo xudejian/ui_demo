@@ -39,6 +39,7 @@ int main_parse_option(int argc, char **argv)
 int init()
 {
 	signal(SIGPIPE, SIG_IGN);
+	srand(time(NULL));
 	// load_sysconf
 	char temp_path[MAX_PATH_LEN];
 	snprintf(temp_path, sizeof(temp_path), "%s/conf/ui.conf", g_sys_path);
@@ -60,8 +61,6 @@ int init()
 		FATAL_LOG("template_load() failed!");
 		return -1;
 	}
-
-	srand(time(NULL));
 
 	return 0;
 }
