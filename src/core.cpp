@@ -363,13 +363,20 @@ message_end:
 
 int worker_handler(conn_ctx_t *ctx) {
 
-  empty_response_buf(&ctx->response_buf);
-  char *buf = ctx->response_buf.base;
-  int len = 0;
+	empty_response_buf(&ctx->response_buf);
+	char *buf = ctx->response_buf.base;
+	int len = 0;
+	if (ctx->upstream_response.len < 1) {
+		buf[0] = '{';
+		buf[1] = '}';
+		buf[2] = '\0';
+		ctx->response_buf.len = 2;
+		return 0;
+	}
 
-  memcpy(buf, &ctx->upstream_response, ctx->upstream_response_len);
-  len = ctx->upstream_response_len;
+	memcpy(buf, &ctx->upstream_response.buf, ctx->upstream_response.len);
+	len = ctx->upstream_response.len;
 
-  ctx->response_buf.len = len;
-  return 1;
+	ctx->response_buf.len = len;
+	return 1;
 }

@@ -60,6 +60,7 @@ typedef struct tag_Group_sock_t
 {
 	Group_server_sock_t group[MAX_GROUP_NUM];
 	int distribute_count;
+	int response_count;
 }Group_sock_t;
 
 typedef struct tag_Group_rate_t
@@ -101,10 +102,20 @@ typedef struct {
 } upstream_request_t;
 
 typedef struct {
+	u_int type;
+	u_int width;
+	u_int height;
+	u_int capacity;
+	u_int tpl;
+} upstream_response_head_data_t;
+
+typedef struct {
 	u_int status;
 	u_int return_num;					//返回结果条数
 	u_int res_num;						//返回结果条数
 	u_int total_num;					//搜索到结果总数
+	u_int len;
+	upstream_response_head_data_t data;
 } upstream_response_head_t;
 
 typedef struct {
@@ -113,19 +124,17 @@ typedef struct {
   uv_stream_t client;
 
   uv_buf_t response_buf;
-  char *start;
-  char *end;
 
   int need_close;
   int status;
   void *data;
   Group_sock_t gs;
 
-  int upstream_response_len;
-  upstream_response_head_t head;
   struct {
+	  u_int len;
 	  upstream_response_head_t head;
 	  char buf[RESPONSE_BUF_SIZE];
+	  char padding[RESPONSE_BUF_SIZE];
   } upstream_response;
 
   int request_len;

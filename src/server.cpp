@@ -508,10 +508,10 @@ void handle_request(uv_work_t *worker) {
 void send_response(uv_work_t *worker, int status) {
 	uv_loop_t *loop = worker->loop;
 	conn_ctx_t *ctx = container_of(worker, conn_ctx_t, worker);
-	if (status < 0 && uv_last_error(loop).code == UV_ECANCELED) {
+	if (status < 0) {
 		return;
 	}
-	DEBUG_LOG("send response [%s]", ctx->response_buf.base);
+	DEBUG_LOG("send response len[%ld] base[%s]", ctx->response_buf.len, ctx->response_buf.base);
 	uv_write(&ctx->write, &ctx->client, &ctx->response_buf, 1, response_send_cb);
 }
 
@@ -520,21 +520,22 @@ alloc_upstream_response_buf(uv_handle_t *tcp, size_t suggested_size) {
 	upstream_connect_t *upstream = container_of(tcp, upstream_connect_t, tcp);
 	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
 	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
-	DEBUG_LOG("in alloc_upstream_response_buf %ld", sizeof(ctx->upstream_response));
-	return uv_buf_init((char *)&(ctx->upstream_response), sizeof(ctx->upstream_response));
+	DEBUG_LOG("in alloc_upstream_response_buf");
+	char *start = ctx->upstream_response.buf + ctx->upstream_response.len;
+	size_t size = sizeof(upstream_response_head_t) + RESPONSE_BUF_SIZE;
+	return uv_buf_init(start, size);
 }
 
 static void
 on_got_upstream_response(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf) {
-	uv_read_stop(tcp);
+	if (nread == 0) {
+		DEBUG_LOG("read upstream response 0");
+		return;
+	}
 	upstream_connect_t *upstream = container_of(tcp, upstream_connect_t, tcp);
 	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
 	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
-	if (nread == 0) {
-		DEBUG_LOG("read upstream response 0");
-		upstream_server_err(ctx, upstream);
-		return;
-	}
+	gs->response_count++;
 
 	uv_loop_t *loop = tcp->loop;
 	if (nread < 0) {
@@ -545,14 +546,32 @@ on_got_upstream_response(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf) {
 		upstream_server_err(ctx, upstream);
 		return;
 	}
+	uv_read_stop(tcp);
 	upstream->status = upstream_idle;
-	ctx->upstream_response_len = nread;
+
 	if (!ctx->request.web.need_merge) {
 		buf.len = nread;
 		uv_write(&ctx->write, &ctx->client, &buf, 1, response_send_cb);
 		return;
 	}
-	uv_queue_work(loop, &ctx->worker, handle_request, send_response);
+
+	upstream_response_head_t *phead = (upstream_response_head_t *)buf.base;
+	ctx->upstream_response.head.return_num += phead->return_num;
+	ctx->upstream_response.head.res_num += phead->res_num;
+	ctx->upstream_response.head.total_num += phead->total_num;
+	memcpy(&ctx->upstream_response.head.data,
+			&phead->data,
+			sizeof(upstream_response_head_data_t));
+	if (phead->return_num) {
+		int body_len = nread - sizeof(ctx->upstream_response.head);
+		memcpy(ctx->upstream_response.buf + ctx->upstream_response.len,
+				buf.base + sizeof(ctx->upstream_response.head),
+				body_len);
+		ctx->upstream_response.len += body_len;
+	}
+	if (gs->response_count >= gs->distribute_count) {
+		uv_queue_work(loop, &ctx->worker, handle_request, send_response);
+	}
 }
 
 static void distribute_upstream_cb(uv_write_t* write, int status) {
@@ -655,8 +674,11 @@ static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 		context_close(ctx);
 		return;
 	}
+	ctx->request.web.need_merge = 1;
 
 	setup_upstream_request(&ctx->request.web, &ctx->request.up);
+	memset(&ctx->upstream_response.head, 0, sizeof(ctx->upstream_response.head));
+	ctx->upstream_response.len = 0;
 
 	int rv = distribute_request(ctx);
 	if (rv < 1) {
