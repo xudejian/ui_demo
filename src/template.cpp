@@ -1242,12 +1242,7 @@ int as_char_value_to_other_process(char *value, var_trans_method_t trans_method,
 }
 
 
-/*
- *	TyRe_response_t 相关搜索结构体
- */
-int as_temp_make_page(char * page,int size, upstream_response_head_t *upstream_response,
-		web_request_t *p_web_req, upstream_request_t *up_request, result_node_t *pres,
-		Session_t *p_ui_info, int iserr)
+int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
 {
 	char *ptpl = NULL;
 	char *pbuf = page;
@@ -1317,7 +1312,7 @@ int as_temp_make_page(char * page,int size, upstream_response_head_t *upstream_r
 		pbuf += n;
 		ppageptr += n;
 		nleft -= n;
-		//DEBUG_LOG("get var n = %d, tag : %s", pvars[i].id, pvars[i].name);
+		DEBUG_LOG("get var n = %d, tag : %s", pvars[i].id, pvars[i].name);
 		//switch (pvars[i].id) {}
 		switch (pvars[i].from_field_type) {//通过字段类型来缩小范围
 

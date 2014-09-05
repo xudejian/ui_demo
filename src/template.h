@@ -345,9 +345,7 @@ extern int template_init();
 
 extern int template_load(char *path);
 
-extern int as_temp_make_page(char *page, int size, upstream_response_head_t *upstream_response,
-	web_request_t *p_web_req, upstream_request_t *p_as_search_request, result_node_t *pres,
-	Session_t *p_ui_info, int iserr = 0);
+extern int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr);
 
 extern int temp_get_template_index(const char *tn);
 extern Template_t *temp_get_template_ptr(int index);
