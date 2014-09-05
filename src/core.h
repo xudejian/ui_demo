@@ -40,5 +40,6 @@
 int server_init();
 int worker_handler(conn_ctx_t *ctx);
 void server_ctx_clean(conn_ctx_t *ctx);
+int setup_upstream_request(web_request_t *web, upstream_request_t *up);
 
 #endif

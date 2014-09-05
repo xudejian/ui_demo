@@ -30,6 +30,7 @@ typedef enum {
 	upstream_connect_init = 0,
 	upstream_connecting,
 	upstream_idle,
+	upstream_work,
 	upstream_close,
 	upstream_connect_fail
 } upstream_connect_status_t;
@@ -41,7 +42,9 @@ typedef struct {
 	uv_timer_t timer;
 	int status;
 	int group_idx;
+	int server_idx;
 	u_int deadtime;     // 上次连接失败时间
+	int need_close;
 } upstream_connect_t;
 
 typedef struct tag_Group_server_sock_t
@@ -78,25 +81,6 @@ typedef struct tag_Referer_group_t
 typedef struct {
 	int magic;
 	char query[MAX_QUERY_WORD_LEN];	//  q= 检索关键词
-	//u_short screen_length;			    //     用户页面像素宽度
-	//u_short screen_height;			    //     用户页面像素高度
-	//u_short page_no;					// pn= 翻页
-	//u_short language;					//     编码方式 参考ty_code
-	//u_short pid;						//pid= 版块id 已废弃
-	//u_short field;					    //  f= 检索范围 0全文检索 1-5，在指定字段里检索
-	//u_short high_light; 				//  h= 是否高亮 0 不高亮； 1 高亮
-	//u_short rn;						    // rn= 每页返回结果数
-	//u_short sort;						//排序字段的及排序方式 ，偶数，降序，奇数，升序 ,值/2=排序字段
-	//u_short qt;                         // qt= 问题类型
-	//u_short sn;                         // sn= 搜索名称
-	//u_short must_and;                   // ma = 搜索结果采用完全与的方式
-	//u_short just_int;			//返回的结果只需要int类型的数据，引擎端不用读文件
-	//u_short multi_discrete;			//引擎端是否需要检查离散变量的值是否在一个词典里边，用于过滤----for 天涯客
-	//u_short other;					    //     预留
-	//char  tn[MAX_TEMPLATE_NAME_LEN];    // tn= 应用模板名称
-	//char  pid_str[MAX_PID_STR_LEN];     //pid= 版块id
-	//char  other_str[MAX_OTHER_STR_LEN]; //pids= 版块ids
-	//char  time_str[MAX_TIM_STR_LEN];	//time=快速时间
 	char need_merge;
 	char need_pb;
 } web_request_t;
@@ -106,22 +90,12 @@ typedef struct {
 
 typedef struct {
 	int magic;
-	char  query[MAX_QUERY_WORD_LEN];	//检索关键词
-	u_short screen_length;			    //用户页面像素宽度
-	u_short screen_height;			    //用户页面像素高度
-	u_short page_no;					//翻页
-	u_short language;					//编码方式 参考ty_code
-	u_short pid;						//版块id
-	u_short field;					    //检索范围 0 标题检索； 1 作者检索
-	u_short high_light; 				//是否高亮 0 不高亮； 1 高亮
-	u_short rn;						    //每页返回结果数
+	char  query[MAX_QUERY_WORD_LEN];
+	u_short page_no;
+	u_short rn;
 	u_short sort;
-	u_short qt;
-	u_short sn;
-	u_short other;					    //预留
-	char  tn[MAX_TEMPLATE_NAME_LEN];    //应用模板名称
-	char  pid_str[MAX_PID_STR_LEN];     //版块id
-	char  other_str[MAX_OTHER_STR_LEN];   //预留
+	u_short other;
+	char  tn[MAX_TEMPLATE_NAME_LEN];
 	char need_merge;
 	char need_pb;
 } upstream_request_t;
@@ -142,6 +116,7 @@ typedef struct {
   char *start;
   char *end;
 
+  int need_close;
   int status;
   void *data;
   Group_sock_t gs;

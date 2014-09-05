@@ -44,17 +44,12 @@ void empty_response_buf(uv_buf_t *buf) {
   buf->len = 0;
 }
 
-static int set_to_upstream_request(web_request_t *web, upstream_request_t *up)
+int setup_upstream_request(web_request_t *web, upstream_request_t *up)
 {
 	assert(web != NULL);
 	assert(up != NULL);
-	if (web == NULL || up == NULL)
-	{
-		WARNING_LOG("web_request_t or upstream_request_t NULL");
-		return -1;
-	}
 	memcpy(up->query, web->query, sizeof(up->query));
-	up->magic = web->magic;
+	up->magic = sizeof(upstream_request_t);
 	up->need_merge = web->need_merge;
 	up->need_pb = web->need_pb;
 	return 0;

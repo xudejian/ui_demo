@@ -5,8 +5,7 @@
 #include "core.h"
 #include "conf.h"
 
-#define MEM_DEBUG 1
-#if MEM_DEBUG
+#ifdef DEBUG
 #define MDEBUG(str, ptr) DEBUG_LOG(str" [%p]", ptr)
 #else
 #define MDEBUG(str, ptr)
@@ -24,6 +23,32 @@ int server_get_group_id(int refererid)
 	if (refererid >= MAX_REFERER_ID || refererid < 0)
 		return -1;
 	return g_rg[refererid].group_id;
+}
+
+static void upstream_tcp_clean_cb(uv_handle_t* tcp) {
+	upstream_connect_t *upstream = container_of(tcp, upstream_connect_t, tcp);
+	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
+	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
+	ctx->need_close--;
+	DEBUG_LOG("check ctx [%p] need_close[%d]", ctx, ctx->need_close);
+	if (ctx->need_close < 1) {
+		free(ctx);
+		DEBUG_LOG("free ctx [%p]", ctx);
+	}
+	return;
+}
+
+static void upstream_timer_clean_cb(uv_handle_t* timer) {
+	upstream_connect_t *upstream = container_of(timer, upstream_connect_t, timer);
+	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
+	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
+	ctx->need_close--;
+	DEBUG_LOG("check ctx [%p] need_close[%d]", ctx, ctx->need_close);
+	if (ctx->need_close < 1) {
+		free(ctx);
+		DEBUG_LOG("free ctx [%p]", ctx);
+	}
+	return;
 }
 
 static void upstream_connect_cb(uv_connect_t* req, int status)
@@ -52,7 +77,6 @@ int upstream_connect_group_server(Group_sock_t *pgs, int group_idx, int server_i
 	int rv;
 	Obj_server_t *server = g_sgroup[group_idx].servers + server_idx;
 	conn_ctx_t *ctx = container_of(pgs, conn_ctx_t, gs);
-	MDEBUG("ctx", ctx);
 	Group_server_sock_t *group = pgs->group + group_idx;
 	upstream_connect_t *up = group->upstream + server_idx;
 
@@ -60,8 +84,11 @@ int upstream_connect_group_server(Group_sock_t *pgs, int group_idx, int server_i
 	up->status = upstream_connect_init;
 	up->deadtime = 0;
 	up->group_idx = group_idx;
+	up->server_idx = server_idx;
 	uv_timer_init(ctx->client.loop, &up->timer);
+	ctx->need_close++;
 	uv_tcp_init(ctx->client.loop, &up->tcp);
+	ctx->need_close++;
 	addr = uv_ip4_addr(server->host, server->port);
 	rv = uv_tcp_connect(&up->connect, &up->tcp, addr, upstream_connect_cb);
 	up->status = upstream_connecting;
@@ -112,34 +139,31 @@ int upstream_clean(Group_sock_t *pgs)
 		for (int sn = 0; sn < group->real_num; sn++)
 		{
 			upstream_connect_t *up = group->upstream + sn;
-			uv_close((uv_handle_t*) &up->timer, NULL);
-			uv_close((uv_handle_t*) &up->tcp, NULL);
+			uv_close((uv_handle_t*) &up->timer, upstream_timer_clean_cb);
+			uv_close((uv_handle_t*) &up->tcp, upstream_tcp_clean_cb);
 			DEBUG_LOG("close timer and tcp");
-			switch (up->status) {
-				case upstream_idle:
-				case upstream_connecting:
-					break;
-				default:
-					break;
-			}
 		}
 	}
 	return 0;
 }
 
-int upstream_server_err(conn_ctx_t *ctx, upstream_connect_t *up, int reconnect)
+static void upstream_reconnect_tcp_cb(uv_handle_t* tcp) {
+	upstream_connect_t *upstream = container_of(tcp, upstream_connect_t, tcp);
+	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
+	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
+	ctx->need_close--;
+	upstream_connect_group_server(&ctx->gs, upstream->group_idx, upstream->server_idx);
+}
+
+int upstream_server_err(conn_ctx_t *ctx, upstream_connect_t *up)
 {
 	up->deadtime = (u_int)time(NULL);
 	up->status = upstream_close;
 	Group_server_sock_t *group = ctx->gs.group + up->group_idx;
 	group->sock_num--;
-	uv_close((uv_handle_t*) &up->timer, NULL);
-	uv_close((uv_handle_t*) &up->tcp, NULL);
-	if (reconnect) {
-		int server_idx = ((char *)up - (char *)group->upstream) / sizeof(group->upstream[0]);
-		DEBUG_LOG("server idx [%d]", server_idx);
-		return upstream_connect_group_server(&ctx->gs, up->group_idx, server_idx);
-	}
+	uv_timer_stop(&up->timer);
+	ctx->need_close--;
+	uv_close((uv_handle_t*) &up->tcp, upstream_reconnect_tcp_cb);
 
 	return 0;
 }
@@ -260,6 +284,19 @@ int server_get_sock(int *group_id, int *server_id, Group_sock_t *pgs)
 	return -1;
 }
 */
+
+#ifdef DEBUG
+static void server_conf_init_fallback_for_debug()
+{
+	if (g_sg_num > 0) {
+		return;
+	}
+	g_sgroup[0].servers[0].port = 3000;
+	strcpy(g_sgroup[0].servers[0].host, "127.0.0.1");
+	g_sgroup[0].srv_num = 1;
+	g_sg_num = 1;
+}
+#endif
 
 static void server_conf_init()
 {
@@ -403,6 +440,10 @@ int server_conf_load(char *confpath)
 			g_sgroup[i].srv_num = GROUP_MAX_SERVER_NUM;
 	}
 
+#ifdef DEBUG
+	server_conf_init_fallback_for_debug();
+#endif
+
 	// load referer_group.conf
 	snprintf(filename, sizeof(filename)-1, "%s/referer_group.conf", confpath);
 	rv = async_load_conf(filename, NULL, server_referer_group_assign_conf_item);
@@ -418,42 +459,48 @@ conn_ctx_t *alloc_conn_context() {
 	conn_ctx_t *ctx = (conn_ctx_t *) malloc(sizeof(conn_ctx_t));
 	ctx->data = NULL;
 	ctx->request_len = 0;
+	ctx->need_close = 0;
 	DEBUG_LOG("alloc conn context");
 	return ctx;
 }
 
 uv_buf_t alloc_request_buf(uv_handle_t *client, size_t suggested_size) {
 	conn_ctx_t *ctx = container_of(client, conn_ctx_t, client);
-	MDEBUG("ctx", ctx);
 	DEBUG_LOG("in alloc_request_buf");
-	return uv_buf_init((char *)&ctx->request.web, REQUEST_BUF_SIZE + RESPONSE_BUF_SIZE);
+	return uv_buf_init((char *)&(ctx->request.web), REQUEST_BUF_SIZE + 1);
 }
 
 void context_clean_cb(uv_handle_t* client) {
 	conn_ctx_t *ctx = container_of(client, conn_ctx_t, client);
-	DEBUG_LOG("context_clean_cb alloc ctx [%p]", ctx);
-	upstream_clean(&ctx->gs);
+	ctx->need_close--;
 	server_ctx_clean(ctx);
-	free(ctx);
-	DEBUG_LOG("free context");
+	DEBUG_LOG("check ctx [%p] need_close[%d]", ctx, ctx->need_close);
+	if (ctx->need_close < 1) {
+		free(ctx);
+		DEBUG_LOG("free ctx [%p]", ctx);
+	}
+	return;
+}
+
+void context_close(conn_ctx_t *ctx) {
+	upstream_clean(&ctx->gs);
+	uv_close((uv_handle_t*) &ctx->client, context_clean_cb);
 }
 
 static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf);
 
 void response_send_cb(uv_write_t *write, int status) {
 	conn_ctx_t *ctx = container_of(write, conn_ctx_t, write);
-	MDEBUG("ctx", ctx);
 	if (status < 0) {
 		uv_loop_t *loop = ctx->client.loop;
 		WARNING_LOG("Write error %s", uv_err_name(uv_last_error(loop)));
 	}
 	DEBUG_LOG("response send done");
-	uv_close((uv_handle_t*) &ctx->client, context_clean_cb);
+	context_close(ctx);
 }
 
 void handle_request(uv_work_t *worker) {
 	conn_ctx_t *ctx = container_of(worker, conn_ctx_t, worker);
-	MDEBUG("ctx", ctx);
 	int rv = worker_handler(ctx);
 	DEBUG_LOG("done in work %d", rv);
 }
@@ -461,7 +508,6 @@ void handle_request(uv_work_t *worker) {
 void send_response(uv_work_t *worker, int status) {
 	uv_loop_t *loop = worker->loop;
 	conn_ctx_t *ctx = container_of(worker, conn_ctx_t, worker);
-	MDEBUG("ctx", ctx);
 	if (status < 0 && uv_last_error(loop).code == UV_ECANCELED) {
 		return;
 	}
@@ -471,37 +517,35 @@ void send_response(uv_work_t *worker, int status) {
 
 static uv_buf_t
 alloc_upstream_response_buf(uv_handle_t *tcp, size_t suggested_size) {
-	upstream_connect_t *upstream = (upstream_connect_t *)tcp->data;
+	upstream_connect_t *upstream = container_of(tcp, upstream_connect_t, tcp);
 	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
-	MDEBUG("gs", gs);
 	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
-	MDEBUG("ctx", ctx);
 	DEBUG_LOG("in alloc_upstream_response_buf %ld", sizeof(ctx->upstream_response));
-	return uv_buf_init((char *)&ctx->upstream_response, sizeof(ctx->upstream_response));
+	return uv_buf_init((char *)&(ctx->upstream_response), sizeof(ctx->upstream_response));
 }
 
 static void
 on_got_upstream_response(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf) {
 	uv_read_stop(tcp);
+	upstream_connect_t *upstream = container_of(tcp, upstream_connect_t, tcp);
+	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
+	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
 	if (nread == 0) {
 		DEBUG_LOG("read upstream response 0");
+		upstream_server_err(ctx, upstream);
 		return;
 	}
 
-	upstream_connect_t *upstream = (upstream_connect_t *)tcp->data;
-	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
-	MDEBUG("gs", gs);
-	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
-	MDEBUG("ctx", ctx);
 	uv_loop_t *loop = tcp->loop;
 	if (nread < 0) {
 		if (uv_last_error(loop).code != UV_EOF) {
 			WARNING_LOG("Read error %s", uv_err_name(uv_last_error(loop)));
 		}
 		DEBUG_LOG("nread %ld < 0 and close upstream", nread);
-		upstream_server_err(ctx, upstream, 1);
+		upstream_server_err(ctx, upstream);
 		return;
 	}
+	upstream->status = upstream_idle;
 	ctx->upstream_response_len = nread;
 	if (!ctx->request.web.need_merge) {
 		buf.len = nread;
@@ -512,17 +556,16 @@ on_got_upstream_response(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf) {
 }
 
 static void distribute_upstream_cb(uv_write_t* write, int status) {
+	upstream_connect_t *upstream = container_of(write, upstream_connect_t, write);
+	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
+	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
+
 	if (status) {
 		//TODO fail
+		upstream_server_err(ctx, upstream);
 		WARNING_LOG("distribute_upstream_cb fail status [%d]", status);
 		return;
 	}
-
-	upstream_connect_t *upstream = (upstream_connect_t *)write->data;
-	Group_sock_t *gs = (Group_sock_t *)(upstream - upstream->group_idx);
-	MDEBUG("gs", gs);
-	conn_ctx_t *ctx = container_of(gs, conn_ctx_t, gs);
-	MDEBUG("ctx", ctx);
 
 	gs->distribute_count++;
 	upstream->tcp.data = upstream;
@@ -531,44 +574,54 @@ static void distribute_upstream_cb(uv_write_t* write, int status) {
 			(uv_read_cb) on_got_upstream_response);
 }
 
-static void distribute_request_upstream(conn_ctx_t *ctx, upstream_connect_t *upstream) {
-	uv_buf_t buf = uv_buf_init((char *)&ctx->request.web, sizeof(web_request_t));
-	upstream->write.data = upstream;
+static int distribute_request_upstream(conn_ctx_t *ctx, upstream_connect_t *upstream) {
+	uv_buf_t buf = uv_buf_init((char *)&(ctx->request.up), sizeof(upstream_request_t));
+	upstream->status = upstream_work;
 	int rv = uv_write(&upstream->write,
 			(uv_stream_t*) &upstream->tcp,
 			&buf,
 			1,
 			distribute_upstream_cb);
 	if (rv) {
+		upstream->status = upstream_connect_fail;
 		WARNING_LOG("write upstream[%d] fail", upstream->group_idx);
 		// TODO fail;
 	}
+	return rv;
 }
 
-static void distribute_request_group(conn_ctx_t *ctx, int group_idx) {
+static int distribute_request_group(conn_ctx_t *ctx, int group_idx) {
 	Group_server_sock_t *group = ctx->gs.group + group_idx;
 	int try_time = group->sock_num;
 
 	if (group->sock_num < 1) {
-
 	}
 
 	int i = group->lru;
-	while (try_time) {
+	while (try_time > 0) {
 		i = (i + 1) % group->real_num;
 		if (group->upstream[i].status == upstream_idle) {
 			group->lru = i;
+			DEBUG_LOG("group lru %d/%d", i, group->real_num);
 			return distribute_request_upstream(ctx, group->upstream + i);
 			break;
 		}
+		DEBUG_LOG("try %d/%d", try_time, group->sock_num);
 		try_time--;
 	}
+	WARNING_LOG("no live upstream");
+	return -1;
 }
 
-static void distribute_request(conn_ctx_t *ctx) {
+static int distribute_request(conn_ctx_t *ctx) {
+	int rv, succ = 0;
 	for (int i = 0; i < g_sg_num; i++) {
-		distribute_request_group(ctx, i);
+		rv = distribute_request_group(ctx, i);
+		if (rv == 0) {
+			succ++;
+		}
 	}
+	return succ;
 }
 
 static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
@@ -578,37 +631,44 @@ static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 	}
 
 	conn_ctx_t *ctx = container_of(client, conn_ctx_t, client);
-	MDEBUG("ctx", ctx);
 	uv_loop_t *loop = client->loop;
 	if (nread < 0) {
 		if (uv_last_error(loop).code != UV_EOF) {
 			WARNING_LOG("Read error %s", uv_err_name(uv_last_error(loop)));
 		}
 		DEBUG_LOG("nread %ld < 0 and close client", nread);
-		uv_close((uv_handle_t*) client, context_clean_cb);
+		context_close(ctx);
 		return;
 	}
 
 	ctx->request_len += nread;
 	if (ctx->request_len > (int)REQUEST_BUF_SIZE) {
 		ctx->request_len = REQUEST_BUF_SIZE;
-		return;
 	}
 
-	DEBUG_LOG("read %ld/%d/%ld", nread, ctx->request_len, REQUEST_BUF_SIZE);
+	DEBUG_LOG("read %ld/%d/%ld %ld", nread, ctx->request_len, REQUEST_BUF_SIZE, buf.len);
 	ctx->response_buf.base = ctx->_response.buf;
 	ctx->response_buf.len = 0;
+
 	if (ctx->request.web.magic != sizeof(web_request_t)) {
 		WARNING_LOG("read request's magic is not correct");
-		uv_close((uv_handle_t*) client, context_clean_cb);
+		context_close(ctx);
 		return;
 	}
 
-	distribute_request(ctx);
+	setup_upstream_request(&ctx->request.web, &ctx->request.up);
+
+	int rv = distribute_request(ctx);
+	if (rv < 1) {
+		WARNING_LOG("distribute_request fail");
+		context_close(ctx);
+		return;
+	}
 }
 
 void on_new_connection(uv_stream_t *server, int status) {
 	if (status < 0) {
+		WARNING_LOG("new connect fail %d", status);
 		// error!
 		return;
 	}
@@ -617,15 +677,15 @@ void on_new_connection(uv_stream_t *server, int status) {
 	conn_ctx_t *ctx = alloc_conn_context();
 	DEBUG_LOG("alloc ctx [%p]", ctx);
 	uv_tcp_init(loop, (uv_tcp_t*) &ctx->client);
+	ctx->need_close++;
 	DEBUG_LOG("pre connect all upstream");
-	MDEBUG("gs", &ctx->gs);
 	upstream_connect_all(&ctx->gs);
 	if (uv_accept(server, (uv_stream_t*) &ctx->client) == 0) {
 		INFO_LOG("accept once");
 		uv_read_start(&ctx->client, alloc_request_buf, on_request);
 	} else {
 		DEBUG_LOG("accept fail");
-		uv_close((uv_handle_t*) &ctx->client, context_clean_cb);
+		context_close(ctx);
 	}
 }
 

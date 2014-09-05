@@ -2,7 +2,7 @@ CC = g++
 
 OPT ?=
 ifeq "${DEBUG}" "1"
-OPT += -g -DDEBUG_TIME
+OPT += -g -DDEBUG_TIME -DDEBUG
 else
 OPT += -O2 -DNDEBUG
 endif

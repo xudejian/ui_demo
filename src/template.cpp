@@ -1341,9 +1341,6 @@ int as_temp_make_page(char * page,int size, upstream_response_head_t *upstream_r
 						case currnet_timestamp:
 							uint_value = time(0);
 							break;
-						case as_apache_sn:
-							uint_value = up_request->sn;
-							break;
 						case as_apache_sort:
 							uint_value = up_request->sort;
 							break;
@@ -1352,12 +1349,6 @@ int as_temp_make_page(char * page,int size, upstream_response_head_t *upstream_r
 							break;
 						case as_apache_pn:
 							uint_value = up_request->page_no;//uiPageNumInt
-							break;
-						case as_apache_ht:
-							uint_value = up_request->high_light;//uiIfHighLight
-							break;
-						case as_apache_language:
-							uint_value = up_request->language;//uiLanguage
 							break;
 						case as_page_count:
 							uint_value = page_count;

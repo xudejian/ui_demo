@@ -31,7 +31,7 @@ void init_conf(Conf_t *conf) {
 	if (NULL == conf) {
 		return;
 	}
-	conf->listen_port = 3000;
+	conf->listen_port = 9110;
 	conf->write_tmout = -1;
 	conf->read_tmout = -1;
 	conf->thread_count = DEFAULT_THREAD_NUM;
