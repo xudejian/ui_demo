@@ -506,11 +506,10 @@ void handle_request(uv_work_t *worker) {
 }
 
 void send_response(uv_work_t *worker, int status) {
-	uv_loop_t *loop = worker->loop;
-	conn_ctx_t *ctx = container_of(worker, conn_ctx_t, worker);
 	if (status < 0) {
 		return;
 	}
+	conn_ctx_t *ctx = container_of(worker, conn_ctx_t, worker);
 	DEBUG_LOG("send response len[%ld] base[%s]", ctx->response_buf.len, ctx->response_buf.base);
 	uv_write(&ctx->write, &ctx->client, &ctx->response_buf, 1, response_send_cb);
 }
@@ -675,6 +674,7 @@ static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 		return;
 	}
 	ctx->request.web.need_merge = 1;
+	ctx->request.web.need_pb = 1;
 
 	setup_upstream_request(&ctx->request.web, &ctx->request.up);
 	memset(&ctx->upstream_response.head, 0, sizeof(ctx->upstream_response.head));

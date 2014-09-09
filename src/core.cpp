@@ -72,7 +72,7 @@ int worker_handler(conn_ctx_t *ctx) {
 	int len = 0;
 	int rv;
 	if (ctx->upstream_response.len < 1) {
-		return empty_response(ctx);
+		//return empty_response(ctx);
 	}
 
 	// TODO merge
@@ -81,6 +81,11 @@ int worker_handler(conn_ctx_t *ctx) {
 	int iserr = 0;
 	if (ctx->request.web.need_pb) {
 		char tmp[16];
+#ifdef DEBUG
+		if (ctx->upstream_response.head.data.type < 1) {
+			ctx->upstream_response.head.data.type = 1;
+		}
+#endif
 		sprintf(tmp, "%u", ctx->upstream_response.head.data.type);
 		tn_index = temp_get_template_index(tmp);
 		if (tn_index < 0) {
@@ -88,13 +93,18 @@ int worker_handler(conn_ctx_t *ctx) {
 			return empty_response(ctx);
 		}
 
-		rv = temp_make_page(buf, RESPONSE_BUF_SIZE, ctx, iserr);
+		rv = temp_make_page(tn_index, buf, RESPONSE_BUF_SIZE, ctx, iserr);
 		if (rv < 0) {
-			temp_make_page(buf, RESPONSE_BUF_SIZE, ctx, 1);
+			rv = temp_make_page(tn_index, buf, RESPONSE_BUF_SIZE, ctx, 1);
 		}
+		len = rv;
+		if (len < 0) {
+			len = 0;
+		}
+	} else {
+		memcpy(buf, &ctx->upstream_response.buf, ctx->upstream_response.len);
+		len = ctx->upstream_response.len;
 	}
-	memcpy(buf, &ctx->upstream_response.buf, ctx->upstream_response.len);
-	len = ctx->upstream_response.len;
 
 	ctx->response_buf.len = len;
 	return 1;

@@ -82,6 +82,7 @@ typedef struct tag_Referer_group_t
 typedef struct {
 	int magic;
 	char query[MAX_QUERY_WORD_LEN];	//  q= 检索关键词
+	u_int ip;
 	char need_merge;
 	char need_pb;
 } web_request_t;
@@ -119,33 +120,36 @@ typedef struct {
 } upstream_response_head_t;
 
 typedef struct {
-  uv_work_t worker;
-  uv_write_t write;
-  uv_stream_t client;
+	u_int len;
+	upstream_response_head_t head;
+	char buf[RESPONSE_BUF_SIZE];
+	char padding[RESPONSE_BUF_SIZE];
+} upstream_response_t;
 
-  uv_buf_t response_buf;
+typedef struct {
+	uv_work_t worker;
+	uv_write_t write;
+	uv_stream_t client;
 
-  int need_close;
-  int status;
-  void *data;
-  Group_sock_t gs;
+	uv_buf_t response_buf;
 
-  struct {
-	  u_int len;
-	  upstream_response_head_t head;
-	  char buf[RESPONSE_BUF_SIZE];
-	  char padding[RESPONSE_BUF_SIZE];
-  } upstream_response;
+	int need_close;
+	int status;
+	void *data;
+	Group_sock_t gs;
 
-  int request_len;
-  struct {
-    web_request_t web;
-	upstream_request_t up;
-  } request;
+	upstream_response_t upstream_response;
 
-  union {
-    char buf[RESPONSE_BUF_SIZE];
-  } _response;
+	int request_len;
+	struct {
+		web_request_t web;
+		upstream_request_t up;
+	} request;
+
+	union {
+		char buf[RESPONSE_BUF_SIZE];
+	} _response;
+	uint server_timeused;
 } conn_ctx_t;
 
 extern uv_tcp_t * server_listen(const char *ip, int port, uv_loop_t *loop);

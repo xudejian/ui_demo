@@ -7,15 +7,13 @@ extern Conf_t g_conf;
 static const char *uivar[] = {
    "Results", 	  "QueryWord", 	 "Pid", 	"RequestNum", 	"TemplateName",
    "TotalNum",   "PageNum", 	 "PrePage",	"NextPage", 	"TimeUsed",
-   "IfHighLight","RelativeMenu","RelativeMenuJSON", "SortMenu","CtimeMenu","Sort",         "Field",
-   "LanguageInt","Language",    "ResNum",  "QuestionType", "SearchName",
-   "PageNumInt", "TotalNumStr", "RelativePids", "RelativePidsJSON", "ErrMsg",
-   "QueryWordURIEnc","QueryWordURIEncUTF8","QueryWordXMLEnc",
+   "IfHighLight","RelativeMenu","RelativeMenuJSON", "SortMenu","CtimeMenu",
+   "Sort",         "Field", "LanguageInt","Language",    "ResNum",
+   "QuestionType", "SearchName", "PageNumInt", "TotalNumStr", "RelativePids",
+   "RelativePidsJSON", "ErrMsg", "QueryWordURIEnc","QueryWordURIEncUTF8","QueryWordXMLEnc",
    "IndexTop",   "Pidstr",      "CurTimestamp", "UiStatus", "Reres",
-   "PageCount", "Backspace"
+   "PageCount", "Backspace", "ResStr"
 };
-
-static int uivar_num = sizeof(uivar) / sizeof(uivar[0]);
 
 static const char *resvar[] = {
    "Title",		"Url", 			"WriterName","WriterNameColor", "WriterID", "CreatTime", "ReplyTime",
@@ -27,7 +25,6 @@ static const char *resvar[] = {
    "AttrDiscrete", "ShortStr1", "ShortStr2", "LongStr1", "LongStr2", "SortWeight",
    "IsDel", "Abstract"
 };
-static int resvar_num = sizeof(resvar) / sizeof(resvar[0]);
 
 as_template_table_t template_table[MAX_VARS_NUM + 1];
 //加载模板对应到程序变量及数字处理方法的关系表
@@ -89,7 +86,7 @@ int template_init(void)
 
 int temp_search_uivar(char *str)
 {
-	for(int i = 0; i < uivar_num; i++) {
+	for(int i = 0; i < TEMPLATE_VAR_NUM; i++) {
 		if(strcmp(str, uivar[i]) == 0)
 			return i;
 	}
@@ -98,7 +95,7 @@ int temp_search_uivar(char *str)
 
 int temp_search_resvar(char *str)
 {
-	for(int i = 0; i < resvar_num; i++) {
+	for(int i = 0; i < RES_VAR_NUM; i++) {
 		if(strcmp(str, resvar[i]) == 0)
 			return i;
 	}
@@ -1111,12 +1108,6 @@ int as_temp_make_res(char *page, int nleft, char *resbuf, int nrv, Var_attr_t *r
 					}
 					break;
 				}
-			case field_type_url:
-				break;
-			case field_type_plate:
-				break;
-			case field_type_pidurl:
-				break;
 			default:
 				WARNING_LOG("unknown pvars[i].from_field_type:%d", pvars[i].from_field_type);
 				return -1;
@@ -1242,7 +1233,7 @@ int as_char_value_to_other_process(char *value, var_trans_method_t trans_method,
 }
 
 
-int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
+int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr)
 {
 	char *ptpl = NULL;
 	char *pbuf = page;
@@ -1250,12 +1241,14 @@ int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
 	Var_attr_t *pvars = NULL;
 	Template_t *ptemplate = NULL;
 	const char *paction_str = NULL;
-	int index = p_ui_info->tn_index;
 	as_query_t query_t;
+    web_request_t *p_web_req= &ctx->request.web;
+	upstream_request_t *up_request = &ctx->request.up;
+	upstream_response_t *upstream_response = &ctx->upstream_response;
 	WARNING_LOG("Query:[%s]", up_request->query);
 
 	if (index < 0 || index >= g_pTemplate->tn_num) {
-		WARNING_LOG("can not find tn[%s] ip[%u]", up_request->tn, p_ui_info->ip);
+		WARNING_LOG("can not find tn[%s] ip[%u]", up_request->tn, p_web_req->ip);
 		index = 0;// user the default template
 		iserr = 1;
 	}
@@ -1267,7 +1260,7 @@ int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
 		ptpl = ptemplate->errbuf;
 		nvars = ptemplate->nev;
 		pvars = ptemplate->err_vars;
-	} else if (upstream_response->return_num == 0) {
+	} else if (upstream_response->head.return_num == 0) {
 		// make none page
 		ptpl = ptemplate->nonebuf;
 		nvars = ptemplate->nnv;
@@ -1292,7 +1285,7 @@ int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
 	memset(encode_query, 0, sizeof(encode_query));
 	urlencode(up_request->query, encode_query);
 	DEBUG_LOG("Query:[%s]", up_request->query);
-	page_count = max_page_no(up_request->rn, upstream_response->total_num);
+	page_count = max_page_no(up_request->rn, upstream_response->head.total_num);
 	if (up_request->page_no > page_count) {
 		if (page_count > 1) {
 			up_request->page_no = page_count - 1;
@@ -1313,142 +1306,71 @@ int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
 		ppageptr += n;
 		nleft -= n;
 		DEBUG_LOG("get var n = %d, tag : %s", pvars[i].id, pvars[i].name);
-		//switch (pvars[i].id) {}
-		switch (pvars[i].from_field_type) {//通过字段类型来缩小范围
-
-			case field_type_uint:
-				{//把程序变量里的u_int字段类型转化为模板里的字段
-					u_int uint_value;
-					int uint_flag = 0;
-					switch (pvars[i].from_id) {
-						case result_head_status:
-							uint_value = upstream_response->status;
-							break;
-						case result_head_return_num:
-							uint_value = upstream_response->return_num;
-							break;
-						case result_head_total_num:
-							uint_value = upstream_response->total_num;
-							break;
-						case session_t_server_timeused:
-							uint_value = p_ui_info->server_timeused;
-							break;
-						case currnet_timestamp:
-							uint_value = time(0);
-							break;
-						case as_apache_sort:
-							uint_value = up_request->sort;
-							break;
-						case as_apache_rn:
-							uint_value = up_request->rn;//uiRequestNum
-							break;
-						case as_apache_pn:
-							uint_value = up_request->page_no;//uiPageNumInt
-							break;
-						case as_page_count:
-							uint_value = page_count;
-							break;
-						default:
-							WARNING_LOG("unknow type_uint from_id:[%d] varname:%s",
-									pvars[i].from_id, pvars[i].name);
-							uint_flag = 1;
-							break;
-					}
-					if(uint_flag == 0) {
-						n1 = as_uint_value_to_other_process(uint_value,pvars[i].trans_method_id,
-								pbuf,nleft,ptemplate);
-						if (n1 < 0 || n1 > nleft) {
-							WARNING_LOG("as_uint_value_to_other_process failed");
-							return -1;
-						}
-						pbuf += n1;
-						nleft -= n1;
-					}
-					break;
+		switch (pvars[i].id) {
+			case uiResStr:
+				n1 = upstream_response->len;
+				if (n1 < 0 || n1 > nleft) {
+					WARNING_LOG("temp make page buf full");
+					return -1;
 				}
-			case field_type_char:
-				{
-					char* char_value = NULL;
-					int char_flag = 0;
-					switch (pvars[i].from_id) {
-						case as_request_query:
-							char_value = up_request->query;
-							break;
-						case result_head_query_term:
-							break;
-						default:
-							WARNING_LOG("unknow type_char from_id:[%d]", pvars[i].from_id);
-							char_flag = 1;
-							break;
-					}
-					if(char_flag == 0) {
-						n1 = as_char_value_to_other_process(char_value, pvars[i].trans_method_id,
-								pbuf, nleft, ptemplate, p_web_req, &query_t);
-						if (n1 < 0 || n1 > nleft) {
-							WARNING_LOG("as_char_value_to_other_process failed");
-							return -1;
-						}
-						pbuf += n1;
-						nleft -= n1;
-					}
-					break;
+				strncpy(pbuf, upstream_response->buf, n1);
+				pbuf += n1;
+				nleft -= n1;
+				break;
+			case uiTemplateName:
+				n1 = snprintf(pbuf, nleft, "%s", up_request->tn);
+				if (n1 < 0 || n1 > nleft) {
+					WARNING_LOG("temp make page buf full");
+					return -1;
 				}
-			case field_type_page_num:
+				pbuf += n1;
+				nleft -= n1;
+				break;
+			case uiPageNumInt:
+				n1 = snprintf(pbuf, nleft, "%d", up_request->page_no);
+				if (n1 < 0 || n1 > nleft) {
+					WARNING_LOG("temp make page buf full");
+					return -1;
+				}
+				pbuf += n1;
+				nleft -= n1;
+				break;
+			case uiPageNum:
+				if (up_request->page_no > 6)
+					j = up_request->page_no - 6;
+				else
+					j = 0;
+				for (; j < up_request->page_no + 6 && j < page_count; j++)
 				{
-					if (up_request->page_no > 6)
-						j = up_request->page_no - 6;
+					if (j == up_request->page_no)
+						n1 = snprintf(pbuf, nleft, "<span class=\"current\">%d</span>", j+1);
 					else
-						j = 0;
-					for (; j < up_request->page_no + 6 && j < page_count; j++)
-					{
-						if (j == up_request->page_no)
-							n1 = snprintf(pbuf, nleft, "<span class=\"current\">%d</span>", j+1);
-						else
-							n1 = snprintf(pbuf, nleft, "<a href='#'>%d</a>", j+1);
-						if (n1 < 0 || n1 > nleft) {
-							WARNING_LOG("field_type_page_num failed");
-							return -1;
-						}
-						pbuf += n1;
-						nleft -= n1;
+						n1 = snprintf(pbuf, nleft, "<a href='#'>%d</a>", j+1);
+					if (n1 < 0 || n1 > nleft) {
+						WARNING_LOG("field_type_page_num failed");
+						return -1;
 					}
-
-					break;
+					pbuf += n1;
+					nleft -= n1;
 				}
-			case field_type_page_pre:
+
+				break;
+			case uiPrePage:
 				if (up_request->page_no > 0)
 				{
 				}
 				break;
-			case field_type_page_next:
+			case uiNextPage:
 				if (up_request->page_no < page_count - 1)
 				{
 				}
 				break;
-			case field_type_sort:
-				break;
-			case field_type_qiye:
-				break;
-			case field_type_relative_pids_json:
-				break;
-			case field_type_relative_topics:
-				break;
-			case field_type_relative_pids:
-				break;
-			case field_type_relative_json:
-				break;
-			case field_type_relative:
-				break;
-			case field_type_sort_menu:
-				break;
-			case field_type_time_menu:
-				break;
-			case field_type_results://需要循环的结果集
-				for (u_int k = 0; k < upstream_response->return_num; k++) {
+			case uiResults:
+				for (u_int k = 0; k < upstream_response->head.return_num; k++) {
 
 					n1 = as_temp_make_res(pbuf, nleft, ptemplate->resbuf, ptemplate->nrv, ptemplate->res_vars,
-							&pres[k], /*p_web_req->high_light*/0, ptemplate,&query_t,
-							upstream_response, p_web_req, k);
+							NULL, 0, ptemplate, &query_t,
+							&upstream_response->head, p_web_req, k);
 					if (n1 < 0 || n1 > nleft) {
 						WARNING_LOG("field_type_results failed");
 						return -1;
@@ -1457,40 +1379,13 @@ int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr)
 					nleft -= n1;
 				}
 				break;
-			case field_type_delete_last_space://删除当前字符前前一个字符
+			case uiBackspace:
 				if (nleft < size) {
 					pbuf--;
 					nleft++;
 					*pbuf='\0';
 				}
 				break;
-			case field_type_index_top:
-				break;
-			case field_type_err_msg:
-				{
-					if (p_ui_info != NULL) {
-						if (p_ui_info->merge_status == DISABLE_WORD_ERROR) {
-							n1 = snprintf(pbuf, nleft, "根据相关法律法规和政策，部分搜索结果未予显示。");
-							if (n1 < 0 || n1 > nleft) {
-								WARNING_LOG("field_type_err_msg failed");
-								return -1;
-							}
-							pbuf += n1;
-							nleft -= n1;
-						}
-					}
-					break;
-				}
-			case field_type_uistatus:
-				{
-					n1 = snprintf(pbuf, nleft, "From Cache: %s;offset: %d", p_ui_info->merge_status == 201 ? "True" : "False",
-							p_ui_info->cache_offset);
-					if (n1 < 0 || n1 > nleft)
-						return -1;
-					pbuf += n1;
-					nleft -= n1;
-					break;
-				}
 			default:
 				WARNING_LOG("unknown pvars[i].from_field_type:%d fieldname:%s",
 						pvars[i].from_field_type, pvars[i].fieldname);
@@ -1552,27 +1447,9 @@ static int as_set_method_for_vars(Var_attr_t *vars, int vnum)
 static int as_set_method_for_template(Template_t *ptemplate)
 {
 	int ret;
-	ret = as_set_method_for_vars(ptemplate->page_vars, ptemplate->npv);
-	if(ret < 0) {
-		WARNING_LOG("as_set_method_for_vars for page_vars failed");
-		return -1;
-	}
-
 	ret = as_set_method_for_vars(ptemplate->res_vars, ptemplate->nrv);
 	if(ret < 0) {
 		WARNING_LOG("as_set_method_for_vars for res_vars failed");
-		return -1;
-	}
-
-	ret = as_set_method_for_vars(ptemplate->none_vars, ptemplate->nnv);
-	if(ret < 0) {
-		WARNING_LOG("as_set_method_for_vars for none_vars failed");
-		return -1;
-	}
-
-	ret = as_set_method_for_vars(ptemplate->err_vars, ptemplate->nev);
-	if(ret < 0) {
-		WARNING_LOG("as_set_method_for_vars for err_vars failed");
 		return -1;
 	}
 	return 0;

@@ -246,7 +246,7 @@ typedef struct tag_Template_handle_t
 	int tn_num;
 }Template_handle_t;
 
-#define TEMPLATE_VAR_NUM 37
+#define TEMPLATE_VAR_NUM 38
 typedef enum
 {
 	uiResults = 0,
@@ -260,6 +260,7 @@ typedef enum
 	uiNextPage,
 	uiTimeUsed,
 	uiIfHighLight,
+
 	uiRelativeMenu,
 	uiRelativeMenuJSON,
 	uiSortMenu,
@@ -268,6 +269,7 @@ typedef enum
 	uiField,
 	uiLanguageInt,
 	uiLanguage,
+
 	uiResNum,
 	uiQuestionType,
 	uiSearchName,
@@ -286,6 +288,7 @@ typedef enum
 	uiReres,
 	uiPageCount,
 	uiBackspace,
+	uiResStr
 }Common_page_var;
 
 #define RES_VAR_NUM  40
@@ -345,7 +348,7 @@ extern int template_init();
 
 extern int template_load(char *path);
 
-extern int temp_make_page(char *page, int size, conn_ctx_t *ctx, int iserr);
+extern int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr);
 
 extern int temp_get_template_index(const char *tn);
 extern Template_t *temp_get_template_ptr(int index);
