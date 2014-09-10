@@ -259,8 +259,8 @@ typedef enum
 	uiPrePage,
 	uiNextPage,
 	uiTimeUsed,
-	uiIfHighLight,
 
+	uiIfHighLight, //10
 	uiRelativeMenu,
 	uiRelativeMenuJSON,
 	uiSortMenu,
@@ -269,9 +269,9 @@ typedef enum
 	uiField,
 	uiLanguageInt,
 	uiLanguage,
-
 	uiResNum,
-	uiQuestionType,
+
+	uiQuestionType, //20
 	uiSearchName,
 	uiPageNumInt,
 	uiTotalNumStr,
@@ -281,11 +281,12 @@ typedef enum
 	uiQueryWordURIEnc,
 	uiQueryWordURIEncUTF8,
 	uiQueryWordXMLEnc,
-	uiIndexTop,
+
+	uiIndexTop, //30
 	uiPidstr,
 	uiCurTimestamp,
 	uiUiStatus,
-	uiReres,
+	uiType,
 	uiPageCount,
 	uiBackspace,
 	uiResStr

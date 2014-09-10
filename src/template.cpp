@@ -11,7 +11,7 @@ static const char *uivar[] = {
    "Sort",         "Field", "LanguageInt","Language",    "ResNum",
    "QuestionType", "SearchName", "PageNumInt", "TotalNumStr", "RelativePids",
    "RelativePidsJSON", "ErrMsg", "QueryWordURIEnc","QueryWordURIEncUTF8","QueryWordXMLEnc",
-   "IndexTop",   "Pidstr",      "CurTimestamp", "UiStatus", "Reres",
+   "IndexTop",   "Pidstr",      "CurTimestamp", "UiStatus", "Type",
    "PageCount", "Backspace", "ResStr"
 };
 
@@ -1326,6 +1326,15 @@ int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr)
 				pbuf += n1;
 				nleft -= n1;
 				break;
+			case uiType:
+				n1 = snprintf(pbuf, nleft, "%d", upstream_response->head.data.type);
+				if (n1 < 0 || n1 > nleft) {
+					WARNING_LOG("temp make page buf full");
+					return -1;
+				}
+				pbuf += n1;
+				nleft -= n1;
+				break;
 			case uiPageNumInt:
 				n1 = snprintf(pbuf, nleft, "%d", up_request->page_no);
 				if (n1 < 0 || n1 > nleft) {
@@ -1387,9 +1396,8 @@ int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr)
 				}
 				break;
 			default:
-				WARNING_LOG("unknown pvars[i].from_field_type:%d fieldname:%s",
-						pvars[i].from_field_type, pvars[i].fieldname);
-				return -1;
+				WARNING_LOG("unknown pvars[i].id:%d tag:%s",
+						pvars[i].id, pvars[i].name);
 				break;
 		}
 		ppageptr += pvars[i].len;

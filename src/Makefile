@@ -14,9 +14,6 @@ OBJS=main.o conf.o core.o server.o template.o util.o
 LIBO=ui
 all	: $(LIBO)
 
-scpSrc= as_ui
-scpObj= as_ui.new
-
 $(LIBO) : $(OBJS)
 	$(CC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LDLIBS)
 clean:
@@ -27,6 +24,6 @@ tags:
 	@ctags `find . -name '*.*[h|c|cpp]'`
 rz:
 	@rz -ayc
-scp: $(scpSrc)
-	@mv ui ui.new
-	scp $(scpObj) a.dc.xdf.cn:~/
+scp: $(LIBO)
+	scp $(LIBO) a.dc.xdf.cn:~/
+	ssh a.dc.xdf.cn 'scp ui 10.200.130.197:~/uid/bin/ui.new'
