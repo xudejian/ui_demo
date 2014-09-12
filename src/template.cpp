@@ -1245,7 +1245,7 @@ int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr)
     web_request_t *p_web_req= &ctx->request.web;
 	upstream_request_t *up_request = &ctx->request.up;
 	upstream_response_t *upstream_response = &ctx->upstream_response;
-	WARNING_LOG("Query:[%s]", up_request->query);
+	DEBUG_LOG("Query:[%s]", up_request->query);
 
 	if (index < 0 || index >= g_pTemplate->tn_num) {
 		WARNING_LOG("can not find tn[%s] ip[%u]", up_request->tn, p_web_req->ip);
