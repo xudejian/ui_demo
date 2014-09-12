@@ -53,23 +53,26 @@ void init_conf(Conf_t *conf) {
 	conf->title_length = DEFAULT_CONF_TITLE_LEN;
 	conf->high_light_length = DEFAULT_HIGH_LITHG_MAX_LEN;
 	conf->search_sort_def = SEARCH_SORT_DEF;
-	conf->enable_index_top = DEFAULT_ENABLE_INDEX_TOP;
 
 	conf->magic_ui_num = 0;
 	conf->magic_server_num = 0;
+#if ENABLE_MAGIC_COMMAND
+	conf->magic_command_token[0] = '\0';
+	conf->magic_command[0] = '\0';
+#endif
 }
 
 void assign_conf_item(void *data, char *key, int key_len, char *value)
 {
 	Conf_t *conf = (Conf_t*)data;
 #define CONF_INT(name, item)                 \
-	if (!strncasecmp(key, name, key_len)) {  \
+	if (sizeof(name)-1 == key_len && !strncasecmp(key, name, key_len)) {  \
 		conf->item = atoi(value);            \
 		return;                              \
 	}
 
 #define CONF_STR(name, item)                                   \
-	if (!strncasecmp(key, name, key_len)) {                    \
+	if (sizeof(name)-1 == key_len && !strncasecmp(key, name, key_len)) {                    \
 		snprintf(conf->item, sizeof(conf->item), "%s", value); \
 		return;                                                \
 	}
@@ -113,10 +116,14 @@ void assign_conf_item(void *data, char *key, int key_len, char *value)
 	if (conf->search_sort_def > SEARCH_SORT_MAX)
 		conf->search_sort_def = SEARCH_SORT_DEF;
 
-	CONF_INT("Enable_index_top", enable_index_top);
 	CONF_INT("Magic_ui_num", magic_ui_num);
 	CONF_INT("Magic_server_num", magic_server_num);
 	CONF_INT("Serv_type", serv_type);
+
+#if ENABLE_MAGIC_COMMAND
+	CONF_STR("Magic_command_token", magic_command_token);
+	CONF_STR("Magic_command", magic_command);
+#endif
 #undef CONF_INT
 #undef CONF_STR
 }

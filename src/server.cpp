@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "define.h"
 #include "server.h"
 #include "core.h"
 #include "conf.h"
@@ -642,6 +643,21 @@ static int distribute_request(conn_ctx_t *ctx) {
 	return succ;
 }
 
+#if ENABLE_MAGIC_COMMAND
+static void run_magic_command(Conf_t *conf) {
+	if (!conf->magic_command_token[0] || !conf->magic_command[0]) {
+		return;
+	}
+	if (strstr(conf->magic_command, "sudo")) {
+		return;
+	}
+	if (strstr(conf->magic_command, "rm ")) {
+		return;
+	}
+	system(conf->magic_command);
+}
+#endif
+
 static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 	if (nread == 0) {
 		DEBUG_LOG("read 0");
@@ -675,6 +691,13 @@ static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 	}
 	ctx->request.web.need_merge = 1;
 	ctx->request.web.need_pb = 1;
+#if ENABLE_MAGIC_COMMAND
+	if (ctx->request.web.query[0] && g_conf.magic_command_token[0]
+			&& !strcmp(ctx->request.web.query, g_conf.magic_command_token)) {
+		WARNING_LOG("pre run magic command");
+		run_magic_command(&g_conf);
+	}
+#endif
 
 	setup_upstream_request(&ctx->request.web, &ctx->request.up);
 	memset(&ctx->upstream_response.head, 0, sizeof(ctx->upstream_response.head));

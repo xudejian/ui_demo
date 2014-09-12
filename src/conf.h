@@ -41,11 +41,6 @@ typedef struct {
 
 	int search_sort_def;
 
-	bool enable_index_top;
-	bool enable_re;
-	int enable_proto_buf;//开启protobuf数据格式与引擎交互
-	int proto_buf_rate;//使用protobuf协议的数据比例
-
 	int magic_ui_num;
 	int magic_server_num;
 	int serv_type;
@@ -54,6 +49,10 @@ typedef struct {
 	int	must_and;			// 是否完全与的归并方式
 	int	need_synonym;		// 是否需要支持同义词
 
+#if ENABLE_MAGIC_COMMAND
+	char magic_command_token[32];
+	char magic_command[32];
+#endif
 } Conf_t;
 
 int load_conf(Conf_t *conf, const char *conf_filename);

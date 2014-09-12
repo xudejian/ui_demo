@@ -1,6 +1,7 @@
 #include <time.h>
 #include <uv.h>
 
+#include "define.h"
 #include "conf.h"
 #include "server.h"
 #include "core.h"
@@ -72,6 +73,11 @@ int main(int argc, char *argv[])
 		FATAL_LOG("fail to init!");
 		return EXIT_FAILURE;
 	}
+
+#if ENABLE_MAGIC_COMMAND
+	DEBUG_LOG("Magic_command_token %s", g_conf.magic_command_token);
+	DEBUG_LOG("Magic_command %s", g_conf.magic_command);
+#endif
 
 	uv_loop_t *loop = uv_loop_new();
 	const char *ip = "0.0.0.0";
