@@ -51,6 +51,7 @@ int setup_upstream_request(web_request_t *web, upstream_request_t *up)
 	assert(up != NULL);
 	memcpy(up->query, web->query, sizeof(up->query));
 	up->magic = sizeof(upstream_request_t);
+	up->slot_id = web->slot_id;
 	up->need_merge = web->need_merge;
 	up->need_pb = web->need_pb;
 	return 0;
@@ -80,16 +81,15 @@ int worker_handler(conn_ctx_t *ctx) {
 	int tn_index;
 	int iserr = 0;
 	if (ctx->request.web.need_pb) {
-		char tmp[16];
 #ifdef DEBUG
 		if (ctx->upstream_response.head.data.type < 1) {
 			ctx->upstream_response.head.data.type = 1;
 		}
 #endif
-		sprintf(tmp, "%u", ctx->upstream_response.head.data.type);
-		tn_index = temp_get_template_index(tmp);
+		snprintf(ctx->request.up.tn, sizeof(ctx->request.up.tn), "%u", ctx->upstream_response.head.data.tpl);
+		tn_index = temp_get_template_index(ctx->request.up.tn);
 		if (tn_index < 0) {
-			WARNING_LOG("notn[%s]", tmp);
+			WARNING_LOG("notn[%s]", ctx->request.up.tn);
 			return empty_response(ctx);
 		}
 

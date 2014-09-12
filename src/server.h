@@ -82,6 +82,7 @@ typedef struct tag_Referer_group_t
 typedef struct {
 	int magic;
 	char query[MAX_QUERY_WORD_LEN];	//  q= 检索关键词
+	long int slot_id;
 	u_int ip;
 	char need_merge;
 	char need_pb;
@@ -93,6 +94,7 @@ typedef struct {
 typedef struct {
 	int magic;
 	char  query[MAX_QUERY_WORD_LEN];
+	long int slot_id;
 	u_short page_no;
 	u_short rn;
 	u_short sort;

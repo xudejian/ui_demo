@@ -282,8 +282,8 @@ typedef enum
 	uiQueryWordURIEncUTF8,
 	uiQueryWordXMLEnc,
 
-	uiIndexTop, //30
-	uiPidstr,
+	uiWidth, //30
+	uiHeight,
 	uiCurTimestamp,
 	uiUiStatus,
 	uiType,

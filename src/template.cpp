@@ -11,7 +11,7 @@ static const char *uivar[] = {
    "Sort",         "Field", "LanguageInt","Language",    "ResNum",
    "QuestionType", "SearchName", "PageNumInt", "TotalNumStr", "RelativePids",
    "RelativePidsJSON", "ErrMsg", "QueryWordURIEnc","QueryWordURIEncUTF8","QueryWordXMLEnc",
-   "IndexTop",   "Pidstr",      "CurTimestamp", "UiStatus", "Type",
+   "Width",   "Height",      "CurTimestamp", "UiStatus", "Type",
    "PageCount", "Backspace", "ResStr"
 };
 
@@ -1294,6 +1294,17 @@ int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr)
 		}
 	}
 
+#define PRINTF_1(fmt, value)                                                  \
+	do {                                                                      \
+		n1 = snprintf(pbuf, nleft, fmt, value);                               \
+		if (n1 < 0 || n1 > nleft) {                                           \
+			WARNING_LOG("temp make page buf full");                           \
+			return -1;                                                        \
+		}                                                                     \
+		pbuf += n1;                                                           \
+		nleft -= n1;                                                          \
+	} while(0)
+
 	for (int i = 0; i < nvars; i++) {
 		//printf("i=%d vars=%s\n", i, pvars[i].name);
 		n = ptpl + pvars[i].pos - ppageptr;
@@ -1318,31 +1329,19 @@ int temp_make_page(int index, char *page, int size, conn_ctx_t *ctx, int iserr)
 				nleft -= n1;
 				break;
 			case uiTemplateName:
-				n1 = snprintf(pbuf, nleft, "%s", up_request->tn);
-				if (n1 < 0 || n1 > nleft) {
-					WARNING_LOG("temp make page buf full");
-					return -1;
-				}
-				pbuf += n1;
-				nleft -= n1;
+				PRINTF_1("%s", up_request->tn);
 				break;
 			case uiType:
-				n1 = snprintf(pbuf, nleft, "%d", upstream_response->head.data.type);
-				if (n1 < 0 || n1 > nleft) {
-					WARNING_LOG("temp make page buf full");
-					return -1;
-				}
-				pbuf += n1;
-				nleft -= n1;
+				PRINTF_1("%d", upstream_response->head.data.type);
+				break;
+			case uiWidth:
+				PRINTF_1("%d", upstream_response->head.data.width);
+				break;
+			case uiHeight:
+				PRINTF_1("%d", upstream_response->head.data.height);
 				break;
 			case uiPageNumInt:
-				n1 = snprintf(pbuf, nleft, "%d", up_request->page_no);
-				if (n1 < 0 || n1 > nleft) {
-					WARNING_LOG("temp make page buf full");
-					return -1;
-				}
-				pbuf += n1;
-				nleft -= n1;
+				PRINTF_1("%d", up_request->page_no);
 				break;
 			case uiPageNum:
 				if (up_request->page_no > 6)
