@@ -485,45 +485,6 @@ quote_escape(const char *src, const size_t len, size_t *esclen,
 	return 0;
 }
 
-int is_socket_epipe(int socket)
-{
-	struct pollfd pfd;
-
-	pfd.fd     = socket;
-	pfd.events = POLLRDHUP | POLLHUP;
-	pfd.revents = 0;
-
-	int rv;
-	do {
-		rv = poll(&pfd, 1, 0);
-	} while (rv == -1 && errno == EINTR);
-
-	if (rv == 1) {
-		if ((pfd.revents & POLLRDHUP) || (pfd.revents & POLLHUP) || (pfd.revents & POLLERR)) {
-			return 1;
-		}
-		return 0;
-	}
-	return rv;
-}
-
-int is_socket_alive(int socket, int timeout)
-{
-	fd_set fds;
-	struct timeval tv;
-	tv.tv_sec = timeout / 1000000;
-	tv.tv_usec = timeout % 1000000;
-
-	FD_ZERO(&fds);
-	FD_SET(socket, &fds);
-
-	int status = select(socket+1, NULL, &fds, NULL, &tv);
-	if(status > 0 && FD_ISSET(socket, &fds)) {
-		return 0;
-	}
-	return -1;
-}
-
 #define TEXT_MAX_LEN 1024
 int get_gbk_from_utf8(char *dest, char* src)
 {
@@ -538,7 +499,7 @@ int get_gbk_from_utf8(char *dest, char* src)
 	if(NULL == dest || NULL == src) {
 		return -1;
 	}
-	memset(dest, 0, sizeof(dest));
+	dest[0] = '\0';
 	memset(wcharbuf,0, sizeof(wcharbuf));
 	setlocale(LC_ALL, "zh_CN.UTF-8");
 	status =  mbstowcs(wcharbuf,src,TEXT_MAX_LEN);
@@ -561,7 +522,7 @@ int get_gbk_from_utf8(char *dest, char* src)
 	setlocale(LC_ALL, "zh_CN.GBK");
 	status = wcstombs(dest,wcharbuf,TEXT_MAX_LEN);
 	if(-1 == status) {
-		memset(dest,0,sizeof(dest));
+		dest[0] = '\0';
 		wc_len = wcslen(wcharbuf);
 		for(loopi = 0, loopj = 0;loopi < wc_len;loopi++) {
 			memset(temp, 0, sizeof(temp));

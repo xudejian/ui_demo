@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/time.h>
 #include <assert.h>
@@ -95,7 +96,7 @@
 #endif
 
 #ifndef u_int
-#define uint32_t u_int
+#define u_int uint32_t
 #endif
 
 #ifndef MAX_PATH_LEN

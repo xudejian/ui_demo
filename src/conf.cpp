@@ -143,23 +143,30 @@ static int parse_config_line(char *line, char **key, int *key_len, char **value)
 	char *p;
 
 	p = line;
-	while (*p && *p == ' ') {
-		p++;
-	}
+#define GO_IF(p, c) while (*p && *p == c) { p++;}
+	GO_IF(p, ' ');
 
 	*key = p;
-	while (*p && *p != ' ') {
+#define GO_UNTIL(p, c) while (*p && *p != c) { p++; }
+	GO_UNTIL(p, ' ');
+#define BACK_IF(p, c) while (*p && *p == c) { p--; }
+	if (*(p-1) == ':') {
+		p--;
+		BACK_IF(p, ':');
 		p++;
 	}
+
 	*key_len = p - *key;
 
-	while (*p && *p == ' ') {
+	if (*p == ':') {
+		GO_UNTIL(p, ' ');
+	} else {
+		GO_IF(p, ' ');
+		if (*p != ':') {
+			return -1;
+		}
 		p++;
 	}
-	if (*p != ':') {
-		return -1;
-	}
-	p++;
 
 	*value = trim(p);
 
@@ -177,9 +184,11 @@ int async_load_conf(const char *filename, void *data, conf_assign_cb fn)
 	char *key, *value;
 	int key_len, rv;
 	while (fgets(buf, sizeof(buf), fp)) {
-		buf[sizeof(buf) - 1] = '\0';
 		rv = parse_config_line(buf, &key, &key_len, &value);
 		if (rv) {
+			continue;
+		}
+		if (key[0] == '#') {
 			continue;
 		}
 		(*fn)(data, key, key_len, value);

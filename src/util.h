@@ -25,9 +25,6 @@ int
 no_escape(const char *src, const size_t len, size_t *esclen,
 	char *obj, const size_t size, size_t *use_len);
 
-int is_socket_alive(int socket, int timeout);
-int is_socket_epipe(int socket);
-
 int get_gbk_from_utf8(char *dst, char *src);
 
 #define SLEN(str) (sizeof(str) - 1)

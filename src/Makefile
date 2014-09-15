@@ -8,14 +8,13 @@ OPT += -O2 -DNDEBUG
 endif
 
 CXXFLAGS= -Wall -DLINUX=2 -D_REENTRANT -D_GNU_SOURCE $(OPT)
-LDFLAGS= -static
 LDLIBS= -luv -lhiredis -lpthread
 OBJS=main.o conf.o core.o server.o template.o util.o
 LIBO=ui
 all	: $(LIBO)
 
 $(LIBO) : $(OBJS)
-	$(CC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LDLIBS)
+	$(CC) -o $@ $^ $(CXXFLAGS) $(LDLIBS)
 clean:
 	@rm -f *.o $(LIBO) *~
 cleanall: clean

@@ -322,16 +322,15 @@ static void temp_assign_conf_item(void *data, char *key, int key_len, char *valu
 {
 	Template_t *ptpl = (Template_t *)data;
 #define CONF_INT(name, item)                 \
-	if (!strncasecmp(key, name, key_len)) {  \
-		item = atoi(value);					 \
-		return;                            \
+	if (sizeof(name)-1 == key_len && !strncasecmp(key, name, key_len)) {  \
+		item = atoi(value);            \
+		return;                              \
 	}
 
 #define CONF_STR(name, item)                                   \
-	if (!strncasecmp(key, name, key_len)) {                    \
-		memcpy(item, value, sizeof(item) - 1);                 \
-		item[sizeof(item) - 1] = '\0';                         \
-		return;                                              \
+	if (sizeof(name)-1 == key_len && !strncasecmp(key, name, key_len)) {                    \
+		snprintf(item, sizeof(item) - 1, "%s", value); \
+		return;                                                \
 	}
 
 	CONF_STR("action", ptpl->action_str);
