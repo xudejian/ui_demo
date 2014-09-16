@@ -32,7 +32,8 @@ typedef enum {
 	upstream_idle,
 	upstream_work,
 	upstream_close,
-	upstream_connect_fail
+	upstream_connect_fail,
+	upstream_wait_reconnect
 } upstream_connect_status_t;
 
 typedef struct {
@@ -132,6 +133,7 @@ typedef struct {
 	uv_work_t worker;
 	uv_write_t write;
 	uv_stream_t client;
+	uv_idle_t idler;
 
 	uv_buf_t response_buf;
 

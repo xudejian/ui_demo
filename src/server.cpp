@@ -60,10 +60,13 @@ static void upstream_connect_cb(uv_connect_t* req, int status)
 	if (0 != status) {
 		up->deadtime = (u_int)time(NULL);
 		up->status = upstream_connect_fail;
+		WARNING_LOG("connect group[%d] server[%d] failed!", up->group_idx, up->server_idx);
+		up->status = upstream_wait_reconnect;
 	} else {
 		up->deadtime = 0;
 		up->status = upstream_idle;
 		group->sock_num++;
+		DEBUG_LOG("connect group[%d] server[%d] succ!", up->group_idx, up->server_idx);
 	}
 	if (group->connecting < 1) {
 		if (group->sock_num == 0) {
@@ -91,16 +94,18 @@ int upstream_connect_group_server(Group_sock_t *pgs, int group_idx, int server_i
 	uv_tcp_init(ctx->client.loop, &up->tcp);
 	ctx->need_close++;
 	addr = uv_ip4_addr(server->host, server->port);
+	DEBUG_LOG("connect... [%d][%d] [%s:%d]", group_idx, server_idx, server->host, server->port);
 	rv = uv_tcp_connect(&up->connect, &up->tcp, addr, upstream_connect_cb);
 	up->status = upstream_connecting;
 	group->connecting++;
 	if (rv)
 	{
-		WARNING_LOG("connect host[%s] port[%d] failed!",
+		WARNING_LOG("connect host[%s:%d] failed!",
 				server->host, server->port);
 		up->status = upstream_connect_fail;
 		up->deadtime = (u_int)time(NULL);
 		group->connecting--;
+		up->status = upstream_wait_reconnect;
 	}
 	return rv;
 }
@@ -497,7 +502,6 @@ void response_send_cb(uv_write_t *write, int status) {
 		WARNING_LOG("Write error %s", uv_err_name(uv_last_error(loop)));
 	}
 	DEBUG_LOG("response send done");
-	context_close(ctx);
 }
 
 void handle_request(uv_work_t *worker) {
@@ -546,6 +550,8 @@ on_got_upstream_response(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf) {
 		upstream_server_err(ctx, upstream);
 		return;
 	}
+	DEBUG_LOG("read [%ld] from upstream [%d/%d]",
+			nread, gs->response_count, gs->distribute_count);
 	uv_read_stop(tcp);
 	upstream->status = upstream_idle;
 
@@ -591,6 +597,7 @@ static void distribute_upstream_cb(uv_write_t* write, int status) {
 	uv_read_start((uv_stream_t*) &upstream->tcp,
 			(uv_alloc_cb) alloc_upstream_response_buf,
 			(uv_read_cb) on_got_upstream_response);
+	DEBUG_LOG("distribute_upstream_cb [%d][%d]", upstream->group_idx, upstream->server_idx);
 }
 
 static int distribute_request_upstream(conn_ctx_t *ctx, upstream_connect_t *upstream) {
@@ -605,6 +612,7 @@ static int distribute_request_upstream(conn_ctx_t *ctx, upstream_connect_t *upst
 		upstream->status = upstream_connect_fail;
 		WARNING_LOG("write upstream[%d] fail", upstream->group_idx);
 		// TODO fail;
+		upstream_server_err(ctx, upstream);
 	}
 	return rv;
 }
@@ -614,6 +622,7 @@ static int distribute_request_group(conn_ctx_t *ctx, int group_idx) {
 	int try_time = group->sock_num;
 
 	if (group->sock_num < 1) {
+		WARNING_LOG("group[%d] sock num < 1", group_idx);
 	}
 
 	int i = group->lru;
@@ -641,6 +650,32 @@ static int distribute_request(conn_ctx_t *ctx) {
 		}
 	}
 	return succ;
+}
+
+static int need_wait_upstream(conn_ctx_t *ctx) {
+	for (int i = 0; i < g_sg_num; i++) {
+		Group_server_sock_t *group = ctx->gs.group + i;
+		if (group->connecting > 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void do_distribute(uv_idle_t* idler, int status) {
+	uv_idle_stop(idler);
+	conn_ctx_t *ctx = container_of(idler, conn_ctx_t, idler);
+
+	if (need_wait_upstream(ctx)) {
+		uv_idle_start(idler, do_distribute);
+		return;
+	}
+
+	int rv = distribute_request(ctx);
+	if (rv < 1) {
+		WARNING_LOG("distribute_request fail");
+		context_close(ctx);
+	}
 }
 
 #if ENABLE_MAGIC_COMMAND
@@ -680,7 +715,9 @@ static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 		ctx->request_len = REQUEST_BUF_SIZE;
 	}
 
-	DEBUG_LOG("read %ld/%d/%ld %ld", nread, ctx->request_len, REQUEST_BUF_SIZE, buf.len);
+	DEBUG_LOG("read %ld/%d/%ld %ld [%s]",
+			nread, ctx->request_len, REQUEST_BUF_SIZE,
+			buf.len, buf.base);
 	ctx->response_buf.base = ctx->_response.buf;
 	ctx->response_buf.len = 0;
 
@@ -703,12 +740,7 @@ static void on_request(uv_stream_t *client, ssize_t nread, uv_buf_t buf) {
 	memset(&ctx->upstream_response.head, 0, sizeof(ctx->upstream_response.head));
 	ctx->upstream_response.len = 0;
 
-	int rv = distribute_request(ctx);
-	if (rv < 1) {
-		WARNING_LOG("distribute_request fail");
-		context_close(ctx);
-		return;
-	}
+	uv_idle_start(&ctx->idler, do_distribute);
 }
 
 void on_new_connection(uv_stream_t *server, int status) {
@@ -721,6 +753,7 @@ void on_new_connection(uv_stream_t *server, int status) {
 	uv_loop_t *loop = server->loop;
 	conn_ctx_t *ctx = alloc_conn_context();
 	DEBUG_LOG("alloc ctx [%p]", ctx);
+	uv_idle_init(loop, &ctx->idler);
 	uv_tcp_init(loop, (uv_tcp_t*) &ctx->client);
 	ctx->need_close++;
 	DEBUG_LOG("pre connect all upstream");
